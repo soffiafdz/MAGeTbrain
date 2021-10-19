@@ -657,8 +657,11 @@ class MAGeTBrain(object):
                     self.resample_labels(
                         self.temp_dir, atlas.labels, subject, label, stems)
                     candidate_labels.append(label)
-            command = 'voxel_vote {0} {1}'.format(
-                ' '.join(candidate_labels), fused_lbl)
+            prefix = os.path.commonprefix(candidate_labels)
+            short_candidate_labels = [label.replace(prefix, '')
+                for label in candidate_labels]
+            command = 'voxel_vote_wrapper {0} {1} {2}'.format(
+                prefix, ' '.join(short_candidate_labels), fused_lbl)
             if not is_non_zero_file(fused_lbl):
                 self.queue.append_commands(STAGE_VOTE, [command])
 
