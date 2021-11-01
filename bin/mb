@@ -17,6 +17,8 @@ import subprocess
 import shutil
 import datetime
 from os.path import join, exists, basename, dirname
+from itertools import product
+from random import sample
 
 def is_non_zero_file(fpath):
     return os.path.isfile(fpath) and os.path.getsize(fpath) > 0
@@ -133,6 +135,26 @@ def main():
                        metavar="ID",
                        help="Subject ID (no file extension) to operate on")
 
+    # cross-validation options
+    group = parser_run.add_argument_group(title="Cross-validation")
+    group.add_argument("-c", "--cross_validation", default=0,
+                       type=int, metavar="RUNS",
+                       help="Label voting using a Cross-Validation approach. "
+                       "A different instance of the voting stage will be run "
+                       "N times for each subject using a random subsample "
+                       "of atlases and/or templates.")
+
+    group.add_argument("-a", "--n_atlases", default=None,
+                       metavar="N", nargs="*",
+                       help="Atlases subsample size(s). "
+                       "Multiple values are allowed; "
+                       "if undeclared, all present will be used.")
+    group.add_argument("-t", "--n_templates", default=None,
+                       metavar="N", nargs="*",
+                       help="Templates subsample size(s). "
+                       "Multiple values are allowed; "
+                       "if undeclared, all present will be used.")
+
     # Registration options
     group = parser_run.add_argument_group(title="Registration")
     group.add_argument(
@@ -201,6 +223,9 @@ def main():
     parser_status.add_argument(
         "-s", "--subject", default=None, metavar="ID",
         help="Subject ID (no file extension) to operate on")
+    parser_status.add_argument(
+        "-c", "--cross_validation", default=0, type=int, metavar="RUNS",
+        help="Label voting using a Cross-Validation approach.")
     parser_status.set_defaults(func=command_status)
     parser_status.set_defaults(register_cmd='')
 
@@ -364,9 +389,20 @@ def command_check(options):
     atlases = Template.get_templates(atlas_dir)
     if len(atlases) == 0:
         error("No atlases found in input folder {0}".format(atlas_dir))
-    if len(atlases) % 2 == 0:
-        warning("{0} atlases found. Use an odd number for best results".format(
-            len(atlases)))
+    if options.n_atlases:
+        if options.n_atlases > len(atlases):
+            error("Atlas sample size is larger than atlas found: "
+                  "{0} > {1}".format(options.n_atlases, len(atlases)))
+        elif options.n_atlases == len(atlases):
+            warning("Atlas sample size is the same as atlases found: {0}"
+                    .format(len(atlases)))
+        elif options.n_atlases % 2 == 0:
+            warning("Atlas sample size is {0}. "
+                    "Use an odd number for best results"
+                    .format(options.n_atlases))
+    elif len(atlases) % 2 == 0:
+        warning("{0} atlases found. Use an odd number for best results"
+                .format(len(atlases)))
     for a in atlases:
         if not a.labels:
             error("Labels for atlas image {0} not found".format(a.image))
@@ -376,10 +412,30 @@ def command_check(options):
     templates = Template.get_templates(templates_dir)
     if len(templates) == 0:
         error("No templates found in input folder {0}".format(templates_dir))
-    if len(templates) % 2 == 0:
-        warning(
-            "{0} templates found. Use an odd number for best results".format(
-                len(templates)))
+    if options.n_templates:
+        if options.n_templates > len(templates):
+            error("Templates sample size is larger than templates found: "
+                  "{0} > {1}".format(options.n_templates, len(templates)))
+        elif options.n_templates == len(templates):
+            warning("Templates sample size is the same as templates found: {0}"
+                    .format(len(atlases)))
+        elif options.n_templates % 2 == 0:
+            warning("Templates sample size is {0}. "
+                    "Use an odd number for best results"
+                    .format(options.n_templates))
+    elif len(templates) % 2 == 0:
+        warning("{0} templates found. Use an odd number for best results"
+                .format(len(templates)))
+
+    # check cross_validation runs
+    if options.cross_validation < 0:
+        error("CV runs can't be negative")
+    if not options.n_atlases and not options.n_templates:
+        if options.cross_validation > 1:
+            error("Without any sampling, multiple CV runs are redundant")
+        elif options.cross_validation == 1:
+            warning("Without any sampling, one run of CV is the same as "
+                    "running conventional voting")
 
     subjects_dir = join(options.input_dir, 'subjects')
     subjects = Template.get_templates(subjects_dir)
@@ -629,10 +685,10 @@ class MAGeTBrain(object):
         self.queue.append_commands(STAGE_REG_ATLAS, commands)
         return len(commands) == 0
 
-    def stage_register_templates(self, subject):
-        """Register all templates to subjects"""
+    def stage_register_templates(self, subject, templates):
+        """Register templates to subjects"""
         commands = []
-        for template in self.templates:
+        for template in templates:
             reg_dir, transform_file = self.xfm_path(
                 template, subject, self.temp_dir, check_reg_dir=True)
             reg_cmd = self.register_images(
@@ -646,24 +702,59 @@ class MAGeTBrain(object):
     def stage_vote(self):
         """Assumes all registrations are complete. """
         for subject in self.subjects:
-            self.stage_register_templates(subject)
             output_dir, fused_lbl = self.fused_label_path(subject)
             mkdirp(output_dir)
-            candidate_labels = []
-            for atlas in self.atlases:
-                for template in self.templates:
+            if self.options.cross_validation:
+                self.substage_cv(subject, fused_lbl)
+            else:
+                self.stage_register_templates(subject, self.templates)
+                candidate_labels = []
+                for atlas, template in product(self.atlases, self.templates):
                     stems = [atlas.stem, template.stem, subject.stem]
                     label = join(self.temp_dir, ".".join(stems) + "_label.mnc")
                     self.resample_labels(
                         self.temp_dir, atlas.labels, subject, label, stems)
                     candidate_labels.append(label)
-            prefix = os.path.commonprefix(candidate_labels)
-            short_candidate_labels = [label.replace(prefix, '')
-                for label in candidate_labels]
-            command = 'voxel_vote_wrapper {0} {1} {2}'.format(
-                prefix, ' '.join(short_candidate_labels), fused_lbl)
-            if not is_non_zero_file(fused_lbl):
-                self.queue.append_commands(STAGE_VOTE, [command])
+                command = 'voxel_vote {0} {1}'.format(
+                    ' '.join(candidate_labels), fused_lbl)
+                if not is_non_zero_file(fused_lbl):
+                    self.queue.append_commands(STAGE_VOTE, [command])
+
+    def substage_cv(self, subject, fused_lbl):
+        """Submit several runs of label voting."""
+        R, A, T = (range(self.options.cross_validation), # CV runs
+                   self.options.n_atlases,               # Atlas subsample
+                   self.options.n_templates)             # Templates subsample
+        # If subsample size is None, set it to full length for iteration
+        A = A if A else [len(self.atlases)]
+        T = T if T else [len(self.templates)]
+        # Check that subject is not in atlases or templates
+        atlases = [a for a in self.atlases if a.stem != subject.stem]
+        templates = [t for t in self.templates if t.stem != subject.stem]
+        for r, a, t in product(R, A, T):
+            run_lbl = fused_lbl.replace('.mnc', '_run{}.mnc'.format(r))
+            if a < len(atlases):
+                atlases = sample(atlases, a)
+                run_lbl = run_lbl.replace('.mnc', '_atl{}.mnc'.format(a))
+            # Check that templates are not in atlases
+            templates = [t for t in templates
+                         if t.stem not in [a.stem for a in atlases]]
+            if t < len(templates):
+                templates = sample(templates, t)
+                run_lbl = run_lbl.replace('.mnc', '_tem{}.mnc'.format(t))
+            if is_non_zero_file(run_lbl):
+                continue
+            self.stage_register_templates(subject, templates)
+            candidate_labels = []
+            for atlas, template in product(atlases, templates):
+                stems = [atlas.stem, template.stem, subject.stem]
+                label = join(self.temp_dir, ".".join(stems) + "_label.mnc")
+                self.resample_labels(
+                    self.temp_dir, atlas.labels, subject, label, stems)
+                candidate_labels.append(label)
+            command = 'voxel_vote {0} {1}'.format(
+                ' '.join(candidate_labels), run_lbl)
+            self.queue.append_commands(STAGE_VOTE, [command])
 
     def resample_labels(
             self,
