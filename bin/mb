@@ -144,12 +144,12 @@ def main():
                        "N times for each subject using a random subsample "
                        "of atlases and/or templates.")
     group.add_argument("-a", "--n_atlases", default=None,
-                       metavar="N", nargs="*",
+                       type=int, metavar="N", nargs="*",
                        help="Atlases subsample size(s). "
                        "Multiple values are allowed; "
                        "if undeclared, all present will be used.")
     group.add_argument("-t", "--n_templates", default=None,
-                       metavar="N", nargs="*",
+                       type=int, metavar="N", nargs="*",
                        help="Templates subsample size(s). "
                        "Multiple values are allowed; "
                        "if undeclared, all present will be used.")
@@ -226,10 +226,10 @@ def main():
         "-c", "--cross_validation", default=0, type=int, metavar="RUNS",
         help="Label voting using a Cross-Validation approach.")
     parser_status.add_argument(
-        "-a", "--n_atlases", default=None, metavar="N", nargs="*",
+        "-a", "--n_atlases", default=None, type=int, metavar="N", nargs="*",
         help="Atlases subsample size(s).")
     parser_status.add_argument(
-        "-t", "--n_templates", default=None, metavar="N", nargs="*",
+        "-t", "--n_templates", default=None, type=int, metavar="N", nargs="*",
         help="Templates subsample size(s).")
     parser_status.set_defaults(func=command_status)
     parser_status.set_defaults(register_cmd='')
