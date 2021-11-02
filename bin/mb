@@ -398,14 +398,14 @@ def command_check(options):
         for a in options.n_atlases:
             if a > len(atlases):
                 error("Atlas sample size is larger than atlas found: "
-                      "{0} > {1}".format(options.n_atlases, len(atlases)))
+                      "{0} > {1}".format(a, len(atlases)))
             elif a == len(atlases):
                 warning("Atlas sample size is the same as atlases found: {0}"
                         .format(len(atlases)))
             elif a % 2 == 0:
                 warning("Atlas sample size is {0}. "
                         "Use an odd number for best results"
-                        .format(options.n_atlases))
+                        .format(a))
     elif len(atlases) % 2 == 0:
         warning("{0} atlases found. Use an odd number for best results"
                 .format(len(atlases)))
@@ -422,14 +422,14 @@ def command_check(options):
         for t in options.n_templates:
             if t > len(templates):
                 error("Templates sample size is larger than templates found: "
-                      "{0} > {1}".format(options.n_templates, len(templates)))
+                      "{0} > {1}".format(t, len(templates)))
             elif t == len(templates):
                 warning("Templates sample size is the same as templates found: {0}"
-                        .format(len(atlases)))
+                        .format(len(templates)))
             elif t % 2 == 0:
                 warning("Templates sample size is {0}. "
                         "Use an odd number for best results"
-                        .format(options.n_templates))
+                        .format(t))
     elif len(templates) % 2 == 0:
         warning("{0} templates found. Use an odd number for best results"
                 .format(len(templates)))
