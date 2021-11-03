@@ -740,20 +740,21 @@ class MAGeTBrain(object):
         templates = [t for t in self.templates if t.stem != subject.stem]
         for r, a, t in product(R, A, T):
             run_lbl = fused_lbl.replace('.mnc', '_run{}.mnc'.format(r))
+            atlases_sample = atlases
             if a < len(atlases):
-                atlases = sample(atlases, a)
+                atlases_sample = sample(atlases_sample, a)
                 run_lbl = run_lbl.replace('.mnc', '_atl{}.mnc'.format(a))
             # Check that templates are not in atlases
-            templates = [t for t in templates
-                         if t.stem not in [a.stem for a in atlases]]
+            templates_sample = [t for t in templates if t.stem not in
+                                [a.stem for a in atlases_sample]]
             if t < len(templates):
-                templates = sample(templates, t)
+                templates_sample = sample(templates_sample, t)
                 run_lbl = run_lbl.replace('.mnc', '_tem{}.mnc'.format(t))
             if is_non_zero_file(run_lbl):
                 continue
-            self.stage_register_templates(subject, templates)
+            self.stage_register_templates(subject, templates_sample)
             candidate_labels = []
-            for atlas, template in product(atlases, templates):
+            for atlas, template in product(atlases_sample, templates_sample):
                 stems = [atlas.stem, template.stem, subject.stem]
                 label = join(self.temp_dir, ".".join(stems) + "_label.mnc")
                 self.resample_labels(
